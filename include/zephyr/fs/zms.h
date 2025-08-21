@@ -64,6 +64,14 @@ struct zms_fs {
 #if CONFIG_ZMS_LOOKUP_CACHE
 	/** Lookup table used to cache ATE addresses of written IDs */
 	uint64_t lookup_cache[CONFIG_ZMS_LOOKUP_CACHE_SIZE];
+	uint64_t last_read_addr;
+	uint32_t last_read_id;
+	uint32_t highest_id_in_use;
+	uint32_t lowest_id_in_use;
+	int32_t num_entries; // this is not exact!
+	const char *name;
+	bool highest_id_in_use_valid;
+	bool lowest_id_in_use_valid;
 #endif
 };
 
@@ -76,6 +84,15 @@ struct zms_fs {
  * @ingroup zms
  * @{
  */
+
+// TODO: we should probably define our own config (and define the dependencies)
+#if CONFIG_ZMS_LOOKUP_CACHE
+// TODO: clean-up and verify these functions and associated vars (for deletion etc.)
+// Using int32_t ids (and neg. error codes) would be much nicer, but break with zms assumptions
+int zms_get_highest_id_in_use(const struct zms_fs *fs, uint32_t *id);
+int zms_get_lowest_id_in_use(const struct zms_fs *fs, uint32_t *id);
+int32_t zms_get_num_entries(const struct zms_fs *fs);
+#endif
 
 /**
  * @brief Mount a ZMS file system onto the device specified in `fs`.
