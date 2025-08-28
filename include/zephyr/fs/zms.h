@@ -72,6 +72,7 @@ struct zms_fs {
 	const char *name;
 	bool highest_id_in_use_valid;
 	bool lowest_id_in_use_valid;
+	bool invalidate_old_ates;
 #endif
 };
 

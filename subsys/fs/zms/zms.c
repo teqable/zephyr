@@ -1569,12 +1569,15 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 			}
 #ifdef ZMS_DONT_KEEP_HISTORY
 			else {
-				zms_invalidate_ate(&wlk_ate);
-				// TODO: I think we don't need to k_mutex_lock(&fs->zms_lock,
-				// K_FOREVER); for this, right?
-				rc = zms_flash_al_wrt(fs, ate_addr, &wlk_ate, sizeof(wlk_ate));
-				if (rc < 0) {
-					return rc;
+				if (fs->invalidate_old_ates) {
+					zms_invalidate_ate(&wlk_ate);
+					// TODO: I think we don't need to
+					// k_mutex_lock(&fs->zms_lock, K_FOREVER); for this, right?
+					rc = zms_flash_al_wrt(fs, ate_addr, &wlk_ate,
+							      sizeof(wlk_ate));
+					if (rc < 0) {
+						return rc;
+					}
 				}
 				// deleting an entry that indeed existed before
 				if (fs->highest_id_in_use_valid && (fs->highest_id_in_use == id)) {
@@ -1609,7 +1612,7 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 					return 0;
 				}
 #ifdef ZMS_DONT_KEEP_HISTORY
-				else {
+				else if (fs->invalidate_old_ates) {
 					zms_invalidate_ate(&wlk_ate);
 					rc = zms_flash_al_wrt(fs, ate_addr, &wlk_ate,
 							      sizeof(wlk_ate));
@@ -1624,7 +1627,7 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 					return rc;
 				}
 #ifdef ZMS_DONT_KEEP_HISTORY
-				else {
+				else if (fs->invalidate_old_ates) {
 					zms_invalidate_ate(&wlk_ate);
 					rc = zms_flash_al_wrt(fs, ate_addr, &wlk_ate,
 							      sizeof(wlk_ate));
@@ -1708,8 +1711,8 @@ no_cached_entry:
 		fs->lowest_id_in_use = id;
 		fs->lowest_id_in_use_valid = true;
 	}
-	LOG_DBG("%s: %s: ate search loops: %d, gc loops: %d (max. %d) for id: %u", __func__,
-		(fs->name) ? fs->name : "?", loop_count, gc_count, fs->sector_count, id);
+	LOG_DBG("%s: %s: id: %u, len: %d, ate search loops: %d, gc loops: %d (max. %d)", __func__,
+		(fs->name) ? fs->name : "?", id, len, loop_count, gc_count, fs->sector_count);
 #endif
 
 end:
@@ -1751,12 +1754,12 @@ ssize_t zms_read_hist(struct zms_fs *fs, uint32_t id, void *data, size_t len, ui
 	const uint32_t id_max = (fs->last_read_id < UINT32_MAX - ID_MATCH_RANGE)
 					? (fs->last_read_id + ID_MATCH_RANGE)
 					: UINT32_MAX;
-	if ((id >= id_min) && (id <= id_max) && (fs->last_read_addr != ZMS_LOOKUP_CACHE_NO_ADDR)) {
+	if (fs->invalidate_old_ates && (id >= id_min) && (id <= id_max) &&
+	    (fs->last_read_addr != ZMS_LOOKUP_CACHE_NO_ADDR)) {
 		wlk_addr = fs->last_read_addr;
 		if (id > fs->last_read_id) {
 			const uint32_t d = id - fs->last_read_id;
-			uint32_t i = 0;
-			for (; i < d; ++i) {
+			for (uint32_t i = 0; i < d; ++i) {
 				// TODO: this is a primitive heuristic; implement a real
 				// function
 				const uint64_t next_addr = wlk_addr - fs->ate_size;
@@ -1768,10 +1771,6 @@ ssize_t zms_read_hist(struct zms_fs *fs, uint32_t id, void *data, size_t len, ui
 				}
 				wlk_addr = next_addr;
 			}
-			LOG_DBG("%s: %s: larger id: %u, cnt: %d, prev_id: %u, addr: "
-				"0x%0x'%08x, i: %d",
-				__func__, (fs->name) ? fs->name : "?", id, cnt, fs->last_read_id,
-				(uint32_t)(wlk_addr >> 32), (uint32_t)(wlk_addr & INT32_MAX), i);
 		}
 		end_addr = wlk_addr;
 	} else {
