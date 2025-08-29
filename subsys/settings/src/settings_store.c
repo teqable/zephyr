@@ -80,11 +80,13 @@ int settings_load_subtree_direct(
 	 *    apply config
 	 *    commit all
 	 */
+	LOG_DBG("%s: start subtree: %s", __func__, (subtree) ? subtree : "(null)");
 	k_mutex_lock(&settings_lock, K_FOREVER);
 	SYS_SLIST_FOR_EACH_CONTAINER(&settings_load_srcs, cs, cs_next) {
 		cs->cs_itf->csi_load(cs, &arg);
 	}
 	k_mutex_unlock(&settings_lock);
+	LOG_DBG("%s: end subtree: %s", __func__, (subtree) ? subtree : "(null)");
 	return 0;
 }
 

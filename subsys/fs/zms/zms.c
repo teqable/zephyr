@@ -51,7 +51,7 @@ int zms_get_lowest_id_in_use(const struct zms_fs *fs, uint32_t *id)
 
 int32_t zms_get_num_entries(const struct zms_fs *fs)
 {
-	return fs->num_entries;
+	return fs->num_valid_ates;
 }
 
 static int zms_ate_crc8_check(const struct zms_ate *entry);
@@ -121,7 +121,7 @@ static int zms_lookup_cache_rebuild(struct zms_fs *fs)
 	fs->lowest_id_in_use = UINT32_MAX;
 	fs->highest_id_in_use_valid = false;
 	fs->lowest_id_in_use_valid = false;
-	fs->num_entries = 0;
+	fs->num_valid_ates = 0;
 
 	addr = fs->ate_wra;
 
@@ -160,19 +160,17 @@ static int zms_lookup_cache_rebuild(struct zms_fs *fs)
 						cache_entry - fs->lookup_cache, ate.id,
 						(uint32_t)(ate_addr >> 32), (uint32_t)ate_addr);
 				}
-				if (ate.id < 0x7ffffffeUL) { /* TODO: FIXME: remove this */
-					if ((ate.id > fs->highest_id_in_use) ||
-					    (!fs->highest_id_in_use_valid)) {
-						fs->highest_id_in_use = ate.id;
-						fs->highest_id_in_use_valid = true;
-					}
-					if ((ate.id < fs->lowest_id_in_use) ||
-					    (!fs->lowest_id_in_use_valid)) {
-						fs->lowest_id_in_use = ate.id;
-						fs->lowest_id_in_use_valid = true;
-					}
+				if ((ate.id > fs->highest_id_in_use) ||
+				    (!fs->highest_id_in_use_valid)) {
+					fs->highest_id_in_use = ate.id;
+					fs->highest_id_in_use_valid = true;
 				}
-				++fs->num_entries;
+				if ((ate.id < fs->lowest_id_in_use) ||
+				    (!fs->lowest_id_in_use_valid)) {
+					fs->lowest_id_in_use = ate.id;
+					fs->lowest_id_in_use_valid = true;
+				}
+				++fs->num_valid_ates;
 			}
 			previous_sector_num = SECTOR_NUM(ate_addr);
 		}
@@ -203,7 +201,7 @@ static void zms_lookup_cache_invalidate(struct zms_fs *fs, uint32_t sector)
 	fs->lowest_id_in_use = UINT32_MAX;
 	fs->highest_id_in_use_valid = false;
 	fs->lowest_id_in_use_valid = false;
-	fs->num_entries = -1;
+	fs->num_valid_ates = -1;
 }
 
 #endif /* CONFIG_ZMS_LOOKUP_CACHE */
@@ -1571,36 +1569,23 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 			else {
 				if (fs->invalidate_old_ates) {
 					zms_invalidate_ate(&wlk_ate);
-					// TODO: I think we don't need to
-					// k_mutex_lock(&fs->zms_lock, K_FOREVER); for this, right?
 					rc = zms_flash_al_wrt(fs, ate_addr, &wlk_ate,
 							      sizeof(wlk_ate));
 					if (rc < 0) {
 						return rc;
 					}
+					// Between invalidating an old entry in flash and until
+					// completing writing the new entry, there is a time where
+					// concurrent readers see an unexpected -ENOENT.
+					// TODO: we could try to protect this using a read mutex,
+					// but I consider that too expensive atm.
 				}
-				// deleting an entry that indeed existed before
-				if (fs->highest_id_in_use_valid && (fs->highest_id_in_use == id)) {
-					if (id > 0) {
-						--fs->highest_id_in_use;
-						// TODO: this probably wrong; fix for delete use
-						// case
-					} else {
-						fs->highest_id_in_use_valid = false;
-						fs->lowest_id_in_use_valid = false;
-					}
-				}
-				if (fs->lowest_id_in_use_valid && (fs->lowest_id_in_use == id)) {
-					if (id < fs->highest_id_in_use) {
-						++fs->lowest_id_in_use;
-					}
-				} else {
-					fs->highest_id_in_use_valid = false;
-					fs->lowest_id_in_use_valid = false;
-				}
+				// Deleting an entry that indeed existed before
+				// We don't try to track highest and lowest id in use here:
+				// it would require rescanning all ATEs to be correct
 			}
-			if (fs->num_entries >= 0) {
-				--fs->num_entries;
+			if (fs->num_valid_ates >= 0) {
+				--fs->num_valid_ates;
 			}
 #endif
 		} else if (len == wlk_ate.len) {
@@ -1643,8 +1628,8 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 		if (len == 0) {
 			return 0;
 		}
-		if (fs->num_entries >= 0) {
-			++fs->num_entries;
+		if (fs->num_valid_ates >= 0) {
+			++fs->num_valid_ates;
 		}
 	}
 #endif

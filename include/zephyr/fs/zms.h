@@ -68,7 +68,7 @@ struct zms_fs {
 	uint32_t last_read_id;
 	uint32_t highest_id_in_use;
 	uint32_t lowest_id_in_use;
-	int32_t num_entries; // this is not exact!
+	int32_t num_valid_ates;
 	const char *name;
 	bool highest_id_in_use_valid;
 	bool lowest_id_in_use_valid;
@@ -92,7 +92,7 @@ struct zms_fs {
 // Using int32_t ids (and neg. error codes) would be much nicer, but break with zms assumptions
 int zms_get_highest_id_in_use(const struct zms_fs *fs, uint32_t *id);
 int zms_get_lowest_id_in_use(const struct zms_fs *fs, uint32_t *id);
-int32_t zms_get_num_entries(const struct zms_fs *fs);
+int32_t zms_get_num_entries(const struct zms_fs *fs); // this might not be exact!
 #endif
 
 /**
