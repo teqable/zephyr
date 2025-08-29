@@ -197,11 +197,6 @@ static void zms_lookup_cache_invalidate(struct zms_fs *fs, uint32_t sector)
 	}
 	fs->last_read_addr = ZMS_LOOKUP_CACHE_NO_ADDR;
 	fs->last_read_id = UINT32_MAX;
-	fs->highest_id_in_use = UINT32_MAX;
-	fs->lowest_id_in_use = UINT32_MAX;
-	fs->highest_id_in_use_valid = false;
-	fs->lowest_id_in_use_valid = false;
-	fs->num_valid_ates = -1;
 }
 
 #endif /* CONFIG_ZMS_LOOKUP_CACHE */
@@ -1524,7 +1519,7 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 	wlk_addr = fs->lookup_cache[zms_lookup_cache_pos(id)];
 
 	if (wlk_addr == ZMS_LOOKUP_CACHE_NO_ADDR) {
-		goto no_cached_entry;
+		wlk_addr = fs->ate_wra;
 	}
 #else
 	wlk_addr = fs->ate_wra;
@@ -1634,9 +1629,6 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 	}
 #endif
 
-#ifdef CONFIG_ZMS_LOOKUP_CACHE
-no_cached_entry:
-#endif
 	/* calculate required space if the entry contains data */
 	if (data_size) {
 		/* Leave space for delete ate */
@@ -1696,8 +1688,10 @@ no_cached_entry:
 		fs->lowest_id_in_use = id;
 		fs->lowest_id_in_use_valid = true;
 	}
-	LOG_DBG("%s: %s: id: %u, len: %d, ate search loops: %d, gc loops: %d (max. %d)", __func__,
-		(fs->name) ? fs->name : "?", id, len, loop_count, gc_count, fs->sector_count);
+	LOG_DBG("%s: %s: id: %u, len: %d, ate search loops: %d, gc loops: %d (max. %d), "
+		"num_valid_ates: %d, lowest id: %u, highest id: %u",
+		__func__, (fs->name) ? fs->name : "?", id, len, loop_count, gc_count,
+		fs->sector_count, fs->num_valid_ates, fs->lowest_id_in_use, fs->highest_id_in_use);
 #endif
 
 end:
