@@ -31,6 +31,15 @@ extern "C" {
  * @{
  */
 
+#if CONFIG_ZMS_LOOKUP_CACHE
+#define ZMS_READ_CACHE_SIZE (4)
+
+struct zms_read_cache_s {
+	uint64_t addr;
+	uint32_t id;
+};
+#endif
+
 /** Zephyr Memory Storage file system structure */
 struct zms_fs {
 	/** File system offset in flash */
@@ -64,8 +73,7 @@ struct zms_fs {
 #if CONFIG_ZMS_LOOKUP_CACHE
 	/** Lookup table used to cache ATE addresses of written IDs */
 	uint64_t lookup_cache[CONFIG_ZMS_LOOKUP_CACHE_SIZE];
-	uint64_t last_read_addr;
-	uint32_t last_read_id;
+	struct zms_read_cache_s last_read[ZMS_READ_CACHE_SIZE];
 	uint32_t highest_id_in_use;
 	uint32_t lowest_id_in_use;
 	int32_t num_valid_ates;
