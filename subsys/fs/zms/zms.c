@@ -27,6 +27,11 @@ static int zms_ate_valid_different_sector(struct zms_fs *fs, const struct zms_at
 #ifdef CONFIG_ZMS_LOOKUP_CACHE
 #define ZMS_DONT_KEEP_HISTORY 1
 
+static inline const char *get_fs_name(const struct zms_fs *fs)
+{
+	return (fs->name) ? fs->name : "?";
+}
+
 int zms_get_highest_id_in_use(const struct zms_fs *fs, uint32_t *id)
 {
 	if (!fs->highest_id_in_use_valid) {
@@ -67,9 +72,8 @@ static void zms_invalidate_ate(struct zms_ate *ate)
 		const uint8_t orig_crc = ate->crc8;
 		ate->crc8 = orig_crc & ~lsb; // make the lowest 1 bit -> 0
 		if (zms_ate_crc8_check(ate)) {
-			LOG_DBG("%s: wrote invalid crc8 0x%x for id %u (by deleting 0x%x from "
-				"0x%x)",
-				__func__, ate->crc8, ate->id, lsb, orig_crc);
+			LOG_DBG("wrote invalid crc8 0x%x for id %u (by deleting 0x%x from 0x%x)",
+				ate->crc8, ate->id, lsb, orig_crc);
 			return;
 		} else {
 			LOG_ERR("%s: could not invalidate crc8 0x%x for id %u (by deleting 0x%x "
@@ -80,7 +84,7 @@ static void zms_invalidate_ate(struct zms_ate *ate)
 	// It should always be possible to write the all-0 ate
 	memset(ate, 0, sizeof(struct zms_ate));
 	if (zms_ate_crc8_check(ate)) {
-		LOG_DBG("%s: wrote invalid all-0 ate", __func__);
+		LOG_DBG("wrote invalid all-0 ate");
 		return;
 	}
 	// This LOG_ERR() is never hit: the all-0 ate is in fact invalid
@@ -146,14 +150,7 @@ static void zms_read_cache_update(struct zms_fs *fs, uint32_t id, uint64_t ate_a
 	if (strange && fs->invalidate_old_ates) {
 		LOG_WRN("%s: %s: id: %u, e: %d, b: %d, num_valid_ates: %d, highest_id_in_use: %u "
 			"(%svalid), lowest_id_in_use: %u (%svalid)",
-			__func__, fs->name ? fs->name : "?", id, exists_now, existed_before,
-			fs->num_valid_ates, fs->highest_id_in_use,
-			fs->highest_id_in_use_valid ? "" : "in", fs->lowest_id_in_use,
-			fs->lowest_id_in_use_valid ? "" : "in");
-	} else {
-		LOG_DBG("%s: %s: id: %u, e: %d, b: %d, num_valid_ates: %d, highest_id_in_use: %u "
-			"(%svalid), lowest_id_in_use: %u (%svalid)",
-			__func__, fs->name ? fs->name : "?", id, exists_now, existed_before,
+			__func__, get_fs_name(fs), id, exists_now, existed_before,
 			fs->num_valid_ates, fs->highest_id_in_use,
 			fs->highest_id_in_use_valid ? "" : "in", fs->lowest_id_in_use,
 			fs->lowest_id_in_use_valid ? "" : "in");
@@ -278,11 +275,10 @@ static int zms_lookup_cache_rebuild(struct zms_fs *fs)
 			if (zms_ate_valid_different_sector(fs, &ate, current_cycle)) {
 				if (*cache_entry == ZMS_LOOKUP_CACHE_NO_ADDR) {
 					*cache_entry = ate_addr;
-					LOG_DBG("%s: %s: assigned cache entry %2d: id %10u -> "
-						"%3d:0x%08x",
-						__func__, (fs->name) ? fs->name : "?",
-						cache_entry - fs->lookup_cache, ate.id,
-						(uint32_t)(ate_addr >> 32), (uint32_t)ate_addr);
+					LOG_DBG("%s: assigned cache entry %2d: id %10u -> "
+						"0x%llx",
+						get_fs_name(fs), cache_entry - fs->lookup_cache,
+						ate.id, ate_addr);
 				}
 				zms_read_cache_update(fs, ate.id, ate_addr, true, false);
 			}
@@ -293,8 +289,7 @@ static int zms_lookup_cache_rebuild(struct zms_fs *fs)
 			break;
 		}
 	}
-	LOG_DBG("%s: done for fs %s, loop_count: %d", __func__, (fs->name) ? fs->name : "?",
-		loop_count);
+	LOG_DBG("done for fs %s, loop_count: %d", get_fs_name(fs), loop_count);
 
 	return 0;
 }
@@ -313,6 +308,14 @@ static void zms_lookup_cache_invalidate(struct zms_fs *fs, uint32_t sector)
 		fs->last_read[i].addr = ZMS_LOOKUP_CACHE_NO_ADDR;
 		fs->last_read[i].id = UINT32_MAX;
 	}
+}
+
+#else /* CONFIG_ZMS_LOOKUP_CACHE */
+
+static inline const char *get_fs_name(const struct zms_fs *fs)
+{
+	ARG_UNUSED(fs);
+	return "?";
 }
 
 #endif /* CONFIG_ZMS_LOOKUP_CACHE */
@@ -553,8 +556,8 @@ static int zms_flash_erase_sector(struct zms_fs *fs, uint64_t addr)
 	addr &= ADDR_SECT_MASK;
 	offset = zms_addr_to_offset(fs, addr);
 
-	LOG_DBG("Erasing flash at offset 0x%lx ( 0x%llx ), len %u", (long)offset, addr,
-		fs->sector_size);
+	LOG_DBG("%s: erasing flash at offset 0x%lx ( 0x%llx ), len %u", get_fs_name(fs),
+		(long)offset, addr, fs->sector_size);
 
 #ifdef CONFIG_ZMS_LOOKUP_CACHE
 	zms_lookup_cache_invalidate(fs, SECTOR_NUM(addr));
@@ -566,7 +569,8 @@ static int zms_flash_erase_sector(struct zms_fs *fs, uint64_t addr)
 	}
 
 	if (zms_flash_cmp_const(fs, addr, fs->flash_parameters->erase_value, fs->sector_size)) {
-		LOG_ERR("Failure while erasing the sector at offset 0x%lx", (long)offset);
+		LOG_ERR("%s: %s: failure while erasing the sector at offset 0x%lx", __func__,
+			get_fs_name(fs), (long)offset);
 		rc = -ENXIO;
 	}
 
@@ -768,7 +772,7 @@ static int zms_recover_last_ate(struct zms_fs *fs, uint64_t *addr, uint64_t *dat
 	struct zms_ate end_ate;
 	int rc;
 
-	LOG_DBG("Recovering last ate from sector %llu", SECTOR_NUM(*addr));
+	LOG_DBG("%s: recovering last ate from sector %llu", get_fs_name(fs), SECTOR_NUM(*addr));
 
 	/* skip close and empty ATE */
 	*addr -= 2 * fs->ate_size;
@@ -921,7 +925,7 @@ static int zms_add_gc_done_ate(struct zms_fs *fs)
 {
 	struct zms_ate gc_done_ate;
 
-	LOG_DBG("Adding gc done ate at %llx", fs->ate_wra);
+	LOG_DBG("%s: adding gc done ate at %llx", get_fs_name(fs), fs->ate_wra);
 	gc_done_ate.id = ZMS_HEAD_ID;
 	gc_done_ate.len = 0U;
 	gc_done_ate.offset = (uint32_t)SECTOR_OFFSET(fs->data_wra);
@@ -942,7 +946,8 @@ static int zms_add_empty_ate(struct zms_fs *fs, uint64_t addr)
 
 	addr &= ADDR_SECT_MASK;
 
-	LOG_DBG("Adding empty ate at %llx", (uint64_t)(addr + fs->sector_size - fs->ate_size));
+	LOG_DBG("%s: adding empty ate at %llx", get_fs_name(fs),
+		(uint64_t)(addr + fs->sector_size - fs->ate_size));
 	empty_ate.id = ZMS_HEAD_ID;
 	empty_ate.len = 0xffff;
 	empty_ate.offset = 0U;
@@ -1105,10 +1110,9 @@ static int zms_find_ate_with_id(struct zms_fs *fs, uint32_t id, uint64_t start_a
 		}
 	}
 	if (*loop_cnt >= 100000) {
-		LOG_DBG("%s: loop_cnt: %d, id: %d, sa: 0x%llx, ea: 0x%llx, atea: "
-			"0x%llx, wa: 0x%llx, wpa: 0x%llx, first_sect_border_seen: "
-			"%d @ 0x%x",
-			__func__, *loop_cnt, id, start_addr, end_addr, *ate_addr, wlk_addr,
+		LOG_DBG("%s: loop_cnt: %d, id: %d, sa: 0x%llx, ea: 0x%llx, atea: 0x%llx, wa: "
+			"0x%llx, wpa: 0x%llx, first_sect_border_seen: %d @ 0x%x",
+			get_fs_name(fs), *loop_cnt, id, start_addr, end_addr, *ate_addr, wlk_addr,
 			wlk_prev_addr, first_sect_border_seen, end_sect);
 	}
 	return prev_found;
@@ -1235,7 +1239,7 @@ static int zms_gc(struct zms_fs *fs)
 		 */
 		if (wlk_prev_addr == gc_prev_addr) {
 			/* copy needed */
-			LOG_DBG("Moving %d, len %d", gc_ate.id, gc_ate.len);
+			LOG_DBG("%s: moving %d, len %d", get_fs_name(fs), gc_ate.id, gc_ate.len);
 
 			if (gc_ate.len > ZMS_DATA_IN_ATE_SIZE) {
 				/* Copy Data only when len > 8
@@ -1294,7 +1298,7 @@ int zms_clear(struct zms_fs *fs)
 	uint64_t addr;
 
 	if (!fs->ready) {
-		LOG_ERR("zms not initialized");
+		LOG_ERR("%s: %s: zms not initialized", __func__, get_fs_name(fs));
 		return -EACCES;
 	}
 
@@ -1360,7 +1364,9 @@ static int zms_init(struct zms_fs *fs)
 				zms_magic_exist = true;
 				/* Let's check that we support this ZMS version */
 				if (ZMS_GET_VERSION(empty_ate.metadata) != ZMS_DEFAULT_VERSION) {
-					LOG_ERR("ZMS Version is not supported");
+					LOG_ERR("%s: %s: ZMS Version %lu is not supported",
+						__func__, get_fs_name(fs),
+						ZMS_GET_VERSION(empty_ate.metadata));
 					rc = -EPROTONOSUPPORT;
 					goto end;
 				}
@@ -1416,7 +1422,9 @@ static int zms_init(struct zms_fs *fs)
 				zms_magic_exist = true;
 				/* Let's check the version */
 				if (ZMS_GET_VERSION(empty_ate.metadata) != ZMS_DEFAULT_VERSION) {
-					LOG_ERR("ZMS Version is not supported");
+					LOG_ERR("%s: %s: ZMS Version %lu is not supported",
+						__func__, get_fs_name(fs),
+						ZMS_GET_VERSION(empty_ate.metadata));
 					rc = -EPROTONOSUPPORT;
 					goto end;
 				}
@@ -1525,7 +1533,7 @@ static int zms_init(struct zms_fs *fs)
 
 		if (gc_done_marker) {
 			/* erase the next sector */
-			LOG_INF("GC Done marker found");
+			LOG_INF("%s: %s: GC Done marker found", __func__, get_fs_name(fs));
 			addr = fs->ate_wra & ADDR_SECT_MASK;
 			zms_sector_advance(fs, &addr);
 			rc = zms_flash_erase_sector(fs, addr);
@@ -1535,7 +1543,8 @@ static int zms_init(struct zms_fs *fs)
 			rc = zms_add_empty_ate(fs, addr);
 			goto end;
 		}
-		LOG_INF("No GC Done marker found: restarting gc");
+		LOG_INF("%s: %s: no GC Done marker found: restarting gc", __func__,
+			get_fs_name(fs));
 		rc = zms_flash_erase_sector(fs, fs->ate_wra);
 		if (rc) {
 			goto end;
@@ -1590,7 +1599,7 @@ int zms_mount(struct zms_fs *fs)
 
 	fs->flash_parameters = flash_get_parameters(fs->flash_device);
 	if (fs->flash_parameters == NULL) {
-		LOG_ERR("Could not obtain flash parameters");
+		LOG_ERR("%s: %s: could not obtain flash parameters", __func__, get_fs_name(fs));
 		return -EINVAL;
 	}
 
@@ -1599,7 +1608,7 @@ int zms_mount(struct zms_fs *fs)
 
 	/* check that the write block size is supported */
 	if (write_block_size > ZMS_BLOCK_SIZE || write_block_size == 0) {
-		LOG_ERR("Unsupported write block size");
+		LOG_ERR("%s: %s: unsupported write block size", __func__, get_fs_name(fs));
 		return -EINVAL;
 	}
 
@@ -1609,11 +1618,11 @@ int zms_mount(struct zms_fs *fs)
 	if (flash_params_get_erase_cap(fs->flash_parameters) & FLASH_ERASE_C_EXPLICIT) {
 		rc = flash_get_page_info_by_offs(fs->flash_device, fs->offset, &info);
 		if (rc) {
-			LOG_ERR("Unable to get page info");
+			LOG_ERR("%s: %s: unable to get page info", __func__, get_fs_name(fs));
 			return -EINVAL;
 		}
 		if (!fs->sector_size || fs->sector_size % info.size) {
-			LOG_ERR("Invalid sector size");
+			LOG_ERR("%s: %s: invalid sector size", __func__, get_fs_name(fs));
 			return -EINVAL;
 		}
 	}
@@ -1622,13 +1631,14 @@ int zms_mount(struct zms_fs *fs)
 	 * 1 close ATE, 1 empty ATE, 1 GC done ATE, 1 Delete ATE, 1 ID/Value ATE
 	 */
 	if (fs->sector_size < ZMS_MIN_ATE_NUM * fs->ate_size) {
-		LOG_ERR("Invalid sector size, should be at least %zu",
-			ZMS_MIN_ATE_NUM * fs->ate_size);
+		LOG_ERR("%s: %s: invalid sector size, should be at least %zu", __func__,
+			get_fs_name(fs), ZMS_MIN_ATE_NUM * fs->ate_size);
 	}
 
 	/* check the number of sectors, it should be at least 2 */
 	if (fs->sector_count < 2) {
-		LOG_ERR("Configuration error - sector count below minimum requirement (2)");
+		LOG_ERR("%s: %s: configuration error - sector count below minimum requirement (2)",
+			__func__, get_fs_name(fs));
 		return -EINVAL;
 	}
 
@@ -1641,9 +1651,12 @@ int zms_mount(struct zms_fs *fs)
 	/* zms is ready for use */
 	fs->ready = true;
 
-	LOG_INF("%u Sectors of %u bytes", fs->sector_count, fs->sector_size);
-	LOG_INF("alloc wra: %llu, %llx", SECTOR_NUM(fs->ate_wra), SECTOR_OFFSET(fs->ate_wra));
-	LOG_INF("data wra: %llu, %llx", SECTOR_NUM(fs->data_wra), SECTOR_OFFSET(fs->data_wra));
+	LOG_INF("%s: %s: %u Sectors of %u bytes", __func__, get_fs_name(fs), fs->sector_count,
+		fs->sector_size);
+	LOG_INF("%s: %s: alloc wra: %llu, %llx", __func__, get_fs_name(fs), SECTOR_NUM(fs->ate_wra),
+		SECTOR_OFFSET(fs->ate_wra));
+	LOG_INF("%s: %s: data wra: %llu, %llx", __func__, get_fs_name(fs), SECTOR_NUM(fs->data_wra),
+		SECTOR_OFFSET(fs->data_wra));
 
 	return 0;
 }
@@ -1659,7 +1672,7 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 	int32_t loop_count = 0;
 
 	if (!fs->ready) {
-		LOG_ERR("zms not initialized");
+		LOG_ERR("%s: %s: zms not initialized", __func__, get_fs_name(fs));
 		return -EACCES;
 	}
 
@@ -1822,12 +1835,14 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 		}
 		rc = zms_sector_close(fs);
 		if (rc) {
-			LOG_ERR("Failed to close the sector, returned = %d", rc);
+			LOG_ERR("%s: %s: failed to close the sector, returned = %d", __func__,
+				get_fs_name(fs), rc);
 			goto end;
 		}
 		rc = zms_gc(fs);
 		if (rc) {
-			LOG_ERR("Garbage collection failed, returned = %d", rc);
+			LOG_ERR("%s: %s: garbage collection failed, returned = %d", __func__,
+				get_fs_name(fs), rc);
 			goto end;
 		}
 		gc_count++;
@@ -1835,10 +1850,10 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 	rc = len;
 #ifdef CONFIG_ZMS_LOOKUP_CACHE
 	zms_read_cache_update(fs, id, fs->ate_wra, true, prev_found > 0);
-	LOG_DBG("%s: %s: id: %u, len: %d, ate search loops: %d, gc loops: %d (max. %d), "
+	LOG_DBG("%s: id: %u, len: %d, ate search loops: %d, gc loops: %d (max. %d), "
 		"num_valid_ates: %d, lowest id: %u, highest id: %u",
-		__func__, (fs->name) ? fs->name : "?", id, len, loop_count, gc_count,
-		fs->sector_count, fs->num_valid_ates, fs->lowest_id_in_use, fs->highest_id_in_use);
+		get_fs_name(fs), id, len, loop_count, gc_count, fs->sector_count,
+		fs->num_valid_ates, fs->lowest_id_in_use, fs->highest_id_in_use);
 #endif
 
 end:
@@ -1867,7 +1882,7 @@ ssize_t zms_read_hist(struct zms_fs *fs, uint32_t id, void *data, size_t len, ui
 #endif
 
 	if (!fs->ready) {
-		LOG_ERR("zms not initialized");
+		LOG_ERR("%s: %s: zms not initialized", __func__, get_fs_name(fs));
 		return -EACCES;
 	}
 
@@ -1930,8 +1945,8 @@ ssize_t zms_read_hist(struct zms_fs *fs, uint32_t id, void *data, size_t len, ui
 	}
 
 #ifdef CONFIG_ZMS_LOOKUP_CACHE
-	LOG_DBG("%s: %s: id: %u, cnt: %d, addr: 0x%llx, ate loops: %d", __func__,
-		(fs->name) ? fs->name : "?", id, cnt, wlk_addr, loop_count);
+	LOG_DBG("%s: id: %u, cnt: %d, addr: 0x%llx, ate loops: %d", get_fs_name(fs), id, cnt,
+		wlk_addr, loop_count);
 	if (cnt == 0) {
 		zms_read_cache_update(fs, id, rd_addr, prev_found > 0, true);
 	}
@@ -1961,9 +1976,10 @@ ssize_t zms_read_hist(struct zms_fs *fs, uint32_t id, void *data, size_t len, ui
 		if (len >= wlk_ate.len) {
 			computed_data_crc = crc32_ieee(data, wlk_ate.len);
 			if (computed_data_crc != wlk_ate.data_crc) {
-				LOG_ERR("Invalid data CRC: ATE_CRC=0x%08X, "
+				LOG_ERR("%s: %s: invalid data CRC: ATE_CRC=0x%08X, "
 					"computed_data_crc=0x%08X",
-					wlk_ate.data_crc, computed_data_crc);
+					__func__, get_fs_name(fs), wlk_ate.data_crc,
+					computed_data_crc);
 				return -EIO;
 			}
 		}
@@ -2018,7 +2034,7 @@ ssize_t zms_calc_free_space(struct zms_fs *fs)
 	const uint32_t second_to_last_offset = (2 * fs->ate_size);
 
 	if (!fs->ready) {
-		LOG_ERR("zms not initialized");
+		LOG_ERR("%s: %s: zms not initialized", __func__, get_fs_name(fs));
 		return -EACCES;
 	}
 
@@ -2116,7 +2132,7 @@ ssize_t zms_calc_free_space(struct zms_fs *fs)
 size_t zms_active_sector_free_space(struct zms_fs *fs)
 {
 	if (!fs->ready) {
-		LOG_ERR("ZMS not initialized");
+		LOG_ERR("%s: %s: ZMS not initialized", __func__, get_fs_name(fs));
 		return -EACCES;
 	}
 
@@ -2128,7 +2144,7 @@ int zms_sector_use_next(struct zms_fs *fs)
 	int ret;
 
 	if (!fs->ready) {
-		LOG_ERR("ZMS not initialized");
+		LOG_ERR("%s: %s: ZMS not initialized", __func__, get_fs_name(fs));
 		return -EACCES;
 	}
 

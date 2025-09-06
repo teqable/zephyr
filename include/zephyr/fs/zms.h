@@ -32,7 +32,7 @@ extern "C" {
  */
 
 #if CONFIG_ZMS_LOOKUP_CACHE
-#define ZMS_READ_CACHE_SIZE (4)
+#define ZMS_READ_CACHE_SIZE (1)
 
 struct zms_read_cache_s {
 	uint64_t addr;
