@@ -25,6 +25,7 @@ static int zms_ate_valid_different_sector(struct zms_fs *fs, const struct zms_at
 					  uint8_t cycle_cnt);
 
 #ifdef CONFIG_ZMS_LOOKUP_CACHE
+BUILD_ASSERT(UINT32_MAX == ZMS_HEAD_ID);
 #define ZMS_DONT_KEEP_HISTORY 1
 
 static inline const char *get_fs_name(const struct zms_fs *fs)
@@ -1704,9 +1705,11 @@ ssize_t zms_write(struct zms_fs *fs, uint32_t id, const void *data, size_t len)
 	/* Search for a previous valid ATE with the same ID */
 	struct zms_ate wlk_ate;
 	int prev_found = -1;
-	if (fs->highest_id_in_use_valid && (fs->highest_id_in_use < id)) {
+	if (fs->invalidate_old_ates && fs->highest_id_in_use_valid &&
+	    (fs->highest_id_in_use < id)) {
 		prev_found = 0;
-	} else if (fs->lowest_id_in_use_valid && (fs->lowest_id_in_use > id)) {
+	} else if (fs->invalidate_old_ates && fs->lowest_id_in_use_valid &&
+		   (fs->lowest_id_in_use > id)) {
 		prev_found = 0;
 	} else {
 		prev_found = zms_find_ate_with_id(fs, id, wlk_addr, fs->ate_wra, &wlk_ate, &rd_addr,

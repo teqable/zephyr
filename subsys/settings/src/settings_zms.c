@@ -182,7 +182,7 @@ static int settings_zms_load(struct settings_store *cs, const struct settings_lo
 		rc2 = zms_get_data_length(&cf->cf_zms, ZMS_NAME_ID_FROM_LL_NODE(ll_hash_id) +
 							       ZMS_DATA_ID_OFFSET);
 
-		LOG_DBG("%s: ll_hash_id: %d, loop count: %d, rc1: %d, rc2: %d", __func__, ll_hash_id, loop_count, rc1, rc2);
+		LOG_DBG("ll_hash_id: %d, loop count: %d, rc1: %d, rc2: %d", ll_hash_id, loop_count, rc1, rc2);
 		if ((rc1 <= 0) || (rc2 <= 0)) {
 			/* Settings item is not stored correctly in the ZMS.
 			 * ZMS entry for its name or value is either missing
@@ -216,7 +216,7 @@ static int settings_zms_load(struct settings_store *cs, const struct settings_lo
 		ll_hash_id = settings_element.next_hash;
 	}
 
-	LOG_DBG("%s: done, ll_hash_id: %d, loop count: %d, ret: %d", __func__, ll_hash_id, loop_count, ret);
+	LOG_DBG("done, ll_hash_id: %d, loop count: %d, ret: %d", ll_hash_id, loop_count, ret);
 	return ret;
 }
 
